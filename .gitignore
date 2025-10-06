@@ -1,0 +1,14 @@
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# docker
+*.log
+
+# editors
+.vscode/
+.idea/
