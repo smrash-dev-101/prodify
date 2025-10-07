@@ -1,9 +1,9 @@
-
 name: ci
 on:
-  pull_request:
   push:
     branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:    # <-- lets you run it manually
 
 permissions:
   contents: read
@@ -16,34 +16,25 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/prodify-api
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # ---------- TESTS ----------
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # ---- TESTS ----
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install deps for tests
+      - name: Install deps (tests)
         working-directory: services/api
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-
+          pip install -r requirements.txt pytest
       - name: Run tests
         working-directory: services/api
         run: pytest -q
 
-      # ---------- DOCKER BUILD (LOAD LOCALLY) ----------
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+      # ---- DOCKER BUILD (LOAD LOCALLY so Trivy can scan) ----
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -52,24 +43,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build the image for amd64 AND LOAD IT into the local Docker engine
-      - name: Build (amd64) and load
+      - name: Build (amd64) and load locally
         uses: docker/build-push-action@v5
         with:
           context: ./services/api
           platforms: linux/amd64
           push: false
-          load: true
+          load: true                  # <-- key piece
           tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
 
-      # ---------- SECURITY & SBOM (scan local image) ----------
+      # ---- SECURITY & SBOM ----
       - name: Trivy scan (local image)
         uses: aquasecurity/trivy-action@0.24.0
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE }}:sha-${{ github.sha }}
           format: table
-          exit-code: '0' # later: set to '1' to fail on findings
+          exit-code: '0'
           vuln-type: 'os,library'
           ignore-unfixed: true
 
@@ -79,7 +69,7 @@ jobs:
           image: ${{ env.IMAGE }}:sha-${{ github.sha }}
           artifact-name: sbom-${{ github.sha }}.spdx.json
 
-      # ---------- PUSH & SIGN ----------
+      # ---- PUSH & SIGN ----
       - name: Build & push (amd64)
         uses: docker/build-push-action@v5
         with:
@@ -92,9 +82,7 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
-
       - name: Sign image (keyless)
         env:
           COSIGN_EXPERIMENTAL: "1"
-        run: |
-          cosign sign --yes $IMAGE:sha-${GITHUB_SHA}
+        run: cosign sign --yes $IMAGE:sha-${GITHUB_SHA}
