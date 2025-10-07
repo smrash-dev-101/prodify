@@ -26,3 +26,6 @@ Structure                                                                       
       Dockerfile
       .dockerignore
       tests/
+
+## CI Status
+![CI](https://github.com/smrash-dev-101/prodify/actions/workflows/ci.yml/badge.svg)
